@@ -213,5 +213,23 @@ class ValidationsTest < Test::Unit::TestCase
         assert_equal [[:name, :not_present]], @target.errors
       end
     end
+
+    context "assert_length" do
+      should "fail when the attribute size is not in range" do
+        def @target.validate
+          assert_length :name, 2..5
+        end
+
+        @target.name = "L"
+        assert !@target.valid?
+        assert_equal [[:name, :foobarbarbar]], @target.errors
+
+        @target.name = "Lorem"
+        assert @target.valid?
+
+        @target.name = "Lorems"
+        assert !@target.valid?
+      end
+    end
   end
 end

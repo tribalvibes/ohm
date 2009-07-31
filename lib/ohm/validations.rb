@@ -88,6 +88,10 @@ module Ohm
       end
     end
 
+    def assert_length(att, length)
+      assert length === send(att).size, [att, :foobarbarbar]
+    end
+
     def assert(value, error)
       value or errors.push(error) && false
     end

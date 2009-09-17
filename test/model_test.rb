@@ -121,6 +121,13 @@ class TestRedis < Test::Unit::TestCase
 
       assert_equal "maria@example.com", User[1].email
     end
+
+    should "save the new value if the instance variable was modified" do
+      @user.send(:instance_variable_set, "@email", "benoit@example.com")
+      @user.save
+
+      assert_equal "benoit@example.com", User[1].email
+    end
   end
 
   context "Creating a new model" do

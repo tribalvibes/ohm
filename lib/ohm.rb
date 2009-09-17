@@ -636,11 +636,12 @@ module Ohm
     end
 
     def read_local(att)
-      @_attributes[att]
+      instance_variable_get("@#{att}") ||
+        instance_variable_set("@#{att}", @_attributes[att])
     end
 
     def write_local(att, value)
-      @_attributes[att] = value
+      @_attributes[att] = instance_variable_set("@#{att}", value)
     end
 
     def read_remote(att)

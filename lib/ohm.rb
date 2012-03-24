@@ -343,7 +343,12 @@ module Ohm
         opts[:start] ||= 0
         opts[:limit] = [opts[:start], opts[:limit]] if opts[:limit]
 
-        key.sort(opts).map(&model)
+        if opts.has_key?(:get)
+          opts[:get] = model.root.key["*->%s" % opts[:get]] if opts[:get] != :id
+          key.sort(opts)
+        else
+          fetch(key.sort(opts))
+        end
       end
 
       # Sort the model instances by the given attribute.
@@ -1594,7 +1599,7 @@ module Ohm
 
       # if we have to fetch the _type attribute, might as well load them all in one shot
       # however, we defer processing the raw attribute hash until a subsequent access or call to load
-      type ||= id && self.polymorphic && ( _attrs = k.hgetall ) && _attrs.delete(:_type)
+      type ||= id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete(:_type)
       klass = constantize( type.to_s ) if type
 
       instance = 
@@ -1614,7 +1619,7 @@ module Ohm
         end
         yield instance if block_given?
       end
-      
+
       screen[k] = instance unless instance.new?
       instance
     end
@@ -1832,9 +1837,6 @@ module Ohm
       raise MissingID.new( "#{self.class}[#{id}] not found" ) if attrs.empty?
 
       ([:_type] + counters).each{|k| attrs.delete(k.to_s) }
-      attrs.each do |k,v|
-        attrs[k] = v.force_encoding('UTF-8') if v.respond_to?(:force_encoding)
-      end
       
       @loaded = true
       update_local(attrs)

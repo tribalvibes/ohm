@@ -108,7 +108,7 @@ module Ohm
   #
   # @example Connect to a database in port 6380.
   #   Ohm.connect(:port => 6380)
-  def self.connect(*options)
+  def self.connect(options={})
     self.redis = nil
     @options = options
   end
@@ -397,6 +397,10 @@ module Ohm
         key.del
       end
 
+      def ids
+        key.smembers
+      end
+      
       # Simultaneously clear and add all models. This wraps all operations
       # in a MULTI EXEC block to make the whole operation atomic.
       #
@@ -438,6 +442,19 @@ module Ohm
       # @return [Array] Array representation of this collection.
       def to_a
         all
+      end
+      
+     private
+      def fetch(ids)
+        arr = model.db.pipelined do
+          ids.each { |id| model.root.key[id].hgetall }
+        end
+  
+        return [] if arr.nil?
+  
+        arr.map.with_index do |atts, idx|
+          model.new(atts['_type'] || model, id: ids[idx])._preload_attributes(atts)
+        end
       end
     end
 
@@ -532,6 +549,7 @@ module Ohm
       def size
         key.scard
       end
+
 
       # Thin Ruby interface wrapper for *SREM*.
       #
@@ -1455,7 +1473,7 @@ module Ohm
     # @param  [Hash] args attribute-value pairs for the object.
     # @return [Ohm::Model] an instance of the class you're trying to create.
     def self.create(*args, &block)
-      args.unshift(self) if Hash === args.first && args.first.key?(:id)
+      args.unshift(self) if Hash === args.first && args.first.key?(:id) && !args.first.has_key?(:_type)
       model = new(*args, &block)
       model.create
       model
@@ -1562,21 +1580,22 @@ module Ohm
       attrs = args.extract_options!
       id = attrs[:id]
       k = root.key[id] if id
+      type = args.shift || attrs.delete(:_type) || attrs.delete('_type')
       
       # return the object if we have it already materialized
       if id && ( r = screen[k] ) && ( args.empty? || args.first === r )
         attrs.delete(:id)
         #NB this silent setting is different than passing the args through initialize
         # which is what happens if the object is not already materialized
+        # client beware not to slice objects
         r.update_local( attrs )
         return r
       end      
 
+      debug {"#{name}#new: #{type} #{id} #{attrs.keys}"}
       # if we have to fetch the _type attribute, might as well load them all in one shot
-      # however, we can't pass the full attributes through the initialize chain here, due to filtering
-      # (scrivener-like mechanism on initialize.)  so, instead we just stash the
-      # attribute hash and process it later, if the client accesses any of the attributes
-      type = args.shift || id && self.polymorphic && ( _attrs = k.hgetall ) && _attrs.delete(:_type)
+      # however, we defer processing the raw attribute hash until a subsequent access or call to load
+      type ||= id && self.polymorphic && ( _attrs = k.hgetall ) && _attrs.delete(:_type)
       klass = constantize( type.to_s ) if type
       
       instance = 
@@ -1590,7 +1609,10 @@ module Ohm
 
       if instance
         instance.instance_variable_set(:@_type, klass)
-        instance.instance_variable_set(:@loaded, _attrs) unless instance.instance_variable_get(:@loaded)
+        if _attrs && !instance.loaded?
+          _attrs.update!(attrs)
+          instance._preload_attributes(_attrs)
+        end
         yield instance if block_given?
       end
       
@@ -1818,7 +1840,13 @@ module Ohm
       @loaded = true
       update_local(attrs)
       @changed = false
-      attrs
+      self
+    end
+    
+    def _preload_attributes(attrs)
+      attrs.delete(:id)
+      @loaded = attrs
+      self
     end
         
     # Allows you to safely use an instance of {Ohm::Model} as a key in a
@@ -1915,8 +1943,8 @@ module Ohm
     #   Post.connect(:port => 6380, :db => 2)
     #
     # @see file:README.html#connecting Ohm.connect options documentation.
-    def self.connect(*options)
-      self.db = Ohm.connection(*options)
+    def self.connect(options={})
+      @options = options
     end
 
     # @return [Ohm::Key] A key scoped to the model root which uses this object's
@@ -2094,7 +2122,9 @@ module Ohm
     end
     # Provides access to the Redis database. This is shared accross all models and instances.
     def self.db
-      Ohm.threaded[self] || Ohm.redis
+      return Ohm.redis unless defined?(@options)
+
+      Redis.connect(@options)
     end
 
     def self.db=(connection)

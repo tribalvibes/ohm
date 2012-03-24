@@ -108,7 +108,7 @@ module Ohm
   #
   # @example Connect to a database in port 6380.
   #   Ohm.connect(:port => 6380)
-  def self.connect(options={})
+  def self.connect(*options)
     self.redis = nil
     @options = options
   end
@@ -445,7 +445,7 @@ module Ohm
       end
       
      private
-      def fetch(ids)
+      def fetch(ids=ids)
         arr = model.db.pipelined do
           ids.each { |id| model.root.key[id].hgetall }
         end
@@ -591,7 +591,7 @@ module Ohm
       #
       # @return [Array<Ohm::Model>] All members of this set.
       def all
-        key.smembers.map(&model)
+        fetch(ids)
       end
 
       # Allows you to find members of this set which fits the given criteria.
@@ -1592,12 +1592,11 @@ module Ohm
         return r
       end      
 
-      debug {"#{name}#new: #{type} #{id} #{attrs.keys}"}
       # if we have to fetch the _type attribute, might as well load them all in one shot
       # however, we defer processing the raw attribute hash until a subsequent access or call to load
       type ||= id && self.polymorphic && ( _attrs = k.hgetall ) && _attrs.delete(:_type)
       klass = constantize( type.to_s ) if type
-      
+
       instance = 
         if klass && klass < self
           klass.new( klass, attrs )
@@ -1944,6 +1943,7 @@ module Ohm
     #
     # @see file:README.html#connecting Ohm.connect options documentation.
     def self.connect(options={})
+      Ohm.threaded[self] = nil
       @options = options
     end
 

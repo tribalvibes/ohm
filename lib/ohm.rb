@@ -1583,6 +1583,7 @@ module Ohm
     #
     def self.new(*args, &block)
       attrs = args.extract_options!
+      attrs = attrs.dup if attrs.frozen?
       id = attrs[:id]
       k = root.key[id] if id
       type = args.shift || attrs.delete(:_type) || attrs.delete('_type')

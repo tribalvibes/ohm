@@ -452,12 +452,17 @@ module Ohm
      private
       def fetch(ids=ids)
         arr = model.db.pipelined do
-          ids.each { |id| model.root.key[id].hgetall }
+          ids.each do |id| 
+            k = model.root.key[id]
+            model.screen.delete(k)
+            k.hgetall
+          end
         end
   
         return [] if arr.nil?
   
         arr.map.with_index do |atts, idx|
+          # model.counters.each{|k| atts.delete(k.to_s) }
           model.new(atts['_type'] || model, id: ids[idx])._preload_attributes(atts)
         end
       end
@@ -1584,23 +1589,18 @@ module Ohm
     def self.new(*args, &block)
       attrs = args.extract_options!
       attrs = attrs.dup if attrs.frozen?
-      id = attrs[:id]
-      k = root.key[id] if id
       type = args.shift || attrs.delete(:_type) || attrs.delete('_type')
       
       # return the object if we have it already materialized
-      if id && ( r = screen[k] ) && ( args.empty? || args.first === r )
+      if ( id = attrs[:id] ) && ( k = root.key[id] ) && ( r = screen[k] ) && ( type.nil? || constantize( type.to_s ) === r )
         attrs.delete(:id)
-        #NB this silent setting is different than passing the args through initialize
-        # which is what happens if the object is not already materialized
-        # client beware not to slice objects
-        r.update_local( attrs )
+        r.load.update_local( attrs ) unless attrs.empty?
         return r
       end      
 
       # if we have to fetch the _type attribute, might as well load them all in one shot
       # however, we defer processing the raw attribute hash until a subsequent access or call to load
-      type ||= id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete(:_type)
+      type ||= id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete('_type')
       klass = constantize( type.to_s ) if type
 
       instance = 
@@ -2046,7 +2046,6 @@ module Ohm
         write_remotes(atts)
       end
       @changed = false
-      @loaded = nil
       self.class.screen[key] = self
     end
     

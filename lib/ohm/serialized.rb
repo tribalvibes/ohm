@@ -1,6 +1,12 @@
 require 'bigdecimal'
 require 'time'
 require 'date'
+begin
+  require 'yajl/json_gem' unless defined? ActiveSupport::JSON
+rescue LoadError
+  puts 'Warning: Ohm::Serialized requires Yajl for symbolized_keys parsing'
+end
+
 
 module Ohm
 
@@ -114,12 +120,6 @@ module Ohm
     end
     
     class JSONSerializer < Serializer
-      begin
-        require 'yajl/json_gem' unless defined? ActiveSupport::JSON
-      rescue LoadError
-        puts 'Warning: Ohm::Serialized requires Yajl for symbolized_keys parsing'
-      end
-
       def initialize(type, options={})
         super( type, { symbolize_keys: true }.merge( options ) )
       end
@@ -210,6 +210,7 @@ module Ohm
   
         attributes(self) << name unless attributes.include?(name)
         types(root)[name] = type
+        _types.delete(root)
         
         serializer( name, options.delete(:serializer), options )
         define_attribute( name, type, options )
@@ -262,9 +263,14 @@ module Ohm
       end
   
     private
+      attr :_types
+      def _types
+        @_types ||= {}
+      end
+      
       # find the serializer by attribute name or type
       def _serializer(name)
-        type = types[name]
+        type = (_types[self] ||= types)[name]
         # flatten and cache all the serializers up the tree
         @_serializers ||= all_ancestors(serializers(nil)).reverse.reduce(&:merge)
         @_serializers[name] || @_serializers[type] || ( serializers(base)[type] ||= Serializer.default(type) if type )

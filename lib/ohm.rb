@@ -1593,7 +1593,8 @@ module Ohm
 
       # if we have to fetch the _type attribute, might as well load them all in one shot
       type ||= !r && id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete('_type')
-      klass = type && constantize( type.to_s ) || self
+      type = type && constantize( type.to_s )
+      klass = type || self
 
       if r
 #        debug {"#{name}#new hit #{r.class}:#{r.id}  #{klass} (#{type})"}
@@ -1602,13 +1603,13 @@ module Ohm
         if  r.class == klass || !type && r.class < klass
           return r.update_local( attrs.except(:id, :_type, '_type') )
 
-        elsif r.class < klass || klass < r.class
+        elsif type && ( r.class < klass || klass < r.class )
           # pull the attributes to coerce to new type
           attrs = r.attributes.merge(attrs)
           root.screen.delete(k)
         
         else
-          _type_mismatch(klass)
+          _type_mismatch(klass,r.class)
         end
       end
 
@@ -1637,8 +1638,8 @@ module Ohm
       instance
     end
 
-    def self._type_mismatch(klass)
-      raise MissingID.new("#{klass} is not a #{self}")    
+    def self._type_mismatch(klass,cur=self)
+      raise MissingID.new("#{klass} is not a #{cur}")    
     end
 
     # @return [true, false] Whether or not this object has an id.
@@ -2222,7 +2223,7 @@ module Ohm
     end
 
     def create_model_membership
-      clear_model_membership if _type
+      clear_model_membership if root.polymorphic
       self.class.all << self
       root.all << self if self.class != root
     end
@@ -2234,7 +2235,7 @@ module Ohm
     end
 
     def clear_model_membership
-      root.polymorphs.each{|k| k.all.delete(self) unless _type === k }
+      root.polymorphs.each{|k| k.all.delete(self) unless self.class === k }
     end
 
     def update_indices

@@ -454,7 +454,7 @@ module Ohm
         arr = model.db.pipelined do
           ids.each do |id| 
             k = model.root.key[id]
-            model.screen.delete(k)
+            model.root.screen.delete(k)
             k.hgetall
           end
         end
@@ -463,7 +463,7 @@ module Ohm
   
         arr.map.with_index do |atts, idx|
           # model.counters.each{|k| atts.delete(k.to_s) }
-          model.new(atts['_type'] || model, id: ids[idx])._preload_attributes(atts)
+          model.new(atts.delete('_type') || model, true, atts.merge(id: ids[idx]))
         end
       end
     end
@@ -710,13 +710,11 @@ module Ohm
         opts = options.dup
         opts.merge!(:limit => 1)
 
-        r = if opts[:by]
+        if opts[:by]
           sort_by(opts.delete(:by), opts).first
         else
           sort(opts).first
         end
-        
-        r.load if r
       end
 
       # Ruby-like interface wrapper around *SISMEMBER*.
@@ -1393,7 +1391,7 @@ module Ohm
 
     # @private Used for conveniently doing [1, 2].map(&Post) for example.
     def self.to_proc
-      lambda { |id| new(:id => id) }
+      @_to_proc ||= lambda { |id| self[id] }
     end
 
     # Returns a {Ohm::Model::Set set} containing all the members of a given
@@ -1562,7 +1560,6 @@ module Ohm
     #
     # @param [Hash] attrs Attribute value pairs.
     def initialize(attrs = {})
-      @id = nil
       @_memo ||= {}
       @_attributes ||= Hash.new { |hash, key| hash[key] = lazy_fetch(key) }
       update_local(attrs)
@@ -1588,43 +1585,62 @@ module Ohm
     #
     def self.new(*args, &block)
       attrs = args.extract_options!
-      attrs = attrs.dup if attrs.frozen?
-      type = args.shift || attrs.delete(:_type) || attrs.delete('_type')
+      type = args.shift || attrs[:_type] || attrs['_type']
+      loaded = args.shift
       
-      # return the object if we have it already materialized
-      if ( id = attrs[:id] ) && ( k = root.key[id] ) && ( r = screen[k] ) && ( type.nil? || constantize( type.to_s ) === r )
-        attrs.delete(:id)
-        r.load.update_local( attrs ) unless attrs.empty?
-        return r
-      end      
+      # get id, key and materialized copy if any
+      ( id = attrs[:id] ) && ( k = root.key[id] ) && ( r = root.screen[k] )
 
       # if we have to fetch the _type attribute, might as well load them all in one shot
-      # however, we defer processing the raw attribute hash until a subsequent access or call to load
-      type ||= id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete('_type')
-      klass = constantize( type.to_s ) if type
+      type ||= !r && id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete('_type')
+      klass = type && constantize( type.to_s ) || self
 
+      if r
+#        debug {"#{name}#new hit #{r.class}:#{r.id}  #{klass} (#{type})"}
+
+        # return the object if we have it or a subclass already materialized and not coercing
+        if  r.class == klass || !type && r.class < klass
+          return r.update_local( attrs.except(:id, :_type, '_type') )
+
+        elsif r.class < klass || klass < r.class
+          # pull the attributes to coerce to new type
+          attrs = r.attributes.merge(attrs)
+          root.screen.delete(k)
+        
+        else
+          _type_mismatch(klass)
+        end
+      end
+
+      # merge the existing attributes if we loaded them with _type
+      if _attrs
+        raise MissingID.new( "#{klass}[#{id}] not found" ) if _attrs.empty?
+        attrs = _attrs.merge(attrs)
+      end
+
+#      debug {"#{name}#new #{klass} attrs: #{attrs}"}
       instance = 
-        if klass && klass < self
+        if self < klass || klass < self
           klass.new( klass, attrs )
-        elsif !klass || klass == self
+        elsif klass == self
           super( attrs )
         else
-          nil # raise?
+          _type_mismatch(klass)
         end
 
       if instance
-        instance.instance_variable_set(:@_type, klass)
-        if _attrs && !instance.loaded?
-          _attrs.update!(attrs)
-          instance._preload_attributes(_attrs)
-        end
+        instance.instance_variable_set(:@loaded, true) if loaded || r || _attrs
         yield instance if block_given?
+        root.screen[k] = instance unless instance.new?
       end
 
-      screen[k] = instance unless instance.new?
       instance
     end
-    
+
+    def self._type_mismatch(klass)
+      raise MissingID.new("#{klass} is not a #{self}")    
+    end
+
     # @return [true, false] Whether or not this object has an id.
     def new?
       !@id
@@ -1680,6 +1696,7 @@ module Ohm
     def delete
       delete_from_indices
       delete_attributes(collections) unless collections.empty?
+      key[:counters].del
       delete_model_membership
       self
     end
@@ -1693,8 +1710,7 @@ module Ohm
       unless counters.include?(att)
         raise ArgumentError, "#{att.inspect} is not a counter."
       end
-
-      write_local(att, key.hincrby(att, count))
+      key[:counters].hincrby(att, count)
     end
 
     # Decrement the counter denoted by :att.
@@ -1818,15 +1834,20 @@ module Ohm
     # Preload all the attributes of this model from Redis unless we already loaded them.
     # Used internally by `Model::[]` etc.
     def load
-      return load! unless @loaded
-      # if we have preloaded attributes, process them now
-      _load_attributes(@loaded) if Hash === @loaded
+      load! unless @loaded
       self
     end
     
     # (Re-)Load all the attributes from the database
     def load!
-      _load_attributes(key.hgetall) unless new?
+      unless new?
+        cur = attributes unless @loaded
+        attrs = _load_attributes(key.hgetall)
+        attrs = attrs.merge(cur) if cur
+        update_local(attrs)
+        @changed = false
+        root.screen[key] = self
+      end
       self
     end
     
@@ -1836,19 +1857,9 @@ module Ohm
     
     def _load_attributes(attrs)
       raise MissingID.new( "#{self.class}[#{id}] not found" ) if attrs.empty?
-
-      ([:_type] + counters).each{|k| attrs.delete(k.to_s) }
-      
       @loaded = true
-      update_local(attrs)
-      @changed = false
-      self
-    end
-    
-    def _preload_attributes(attrs)
-      attrs.delete(:id)
-      @loaded = attrs
-      self
+      attrs.delete('_type')
+      attrs      
     end
         
     # Allows you to safely use an instance of {Ohm::Model} as a key in a
@@ -1998,11 +2009,11 @@ module Ohm
 
     # internal create action
     def _create
+      # don't try to load the nascent object
+      @loaded = true
       initialize_id if new?
         
       mutex do
-        # don't try to load the nascent object
-        @loaded = true
         create_model_membership
         write
         add_to_indices
@@ -2036,7 +2047,7 @@ module Ohm
     #      in the Redis Command Reference.
     def write
       unless (attribute_names + counters).empty?
-        atts = (attribute_names + counters).inject([]) { |ret, att|
+        atts = attribute_names.inject([]) { |ret, att|
           value = serialize(att)
 
           ret.push(att, value) if not value.empty?
@@ -2046,7 +2057,8 @@ module Ohm
         write_remotes(atts)
       end
       @changed = false
-      self.class.screen[key] = self
+      @loaded = true
+      root.screen[key] = self
     end
     
     # Get and serialize the attribute value for att for writing to the database
@@ -2275,9 +2287,8 @@ module Ohm
     # @param  [#to_s]  value The value of the attribute you want to set.
     # @return [#to_s]  returns value set
     def write_local(att, value)
-      _write_local(att, value)
       changed! # if !attributes.has_key?( att ) || read_local( att ) != value
-      value
+      _write_local(att, value)
     end
 
     def _write_local(att,value)

@@ -116,8 +116,8 @@ module Ohm
   # @private Return a connection to Redis.
   #
   # This is a wrapper around Redis.connect(options)
-  def self.connection(*options)
-    Redis.connect(*options)
+  def self.connection(options={})
+    Redis.connect({ symbolize_keys: true }.merge(options))
   end
 
   # @private Stores the connection options for Ohm.redis.
@@ -463,7 +463,7 @@ module Ohm
   
         arr.map.with_index do |atts, idx|
           # model.counters.each{|k| atts.delete(k.to_s) }
-          model.new(atts.delete('_type') || model, true, atts.merge(id: ids[idx]))
+          model.new(atts.delete(:_type) || atts.delete('_type') || model, true, atts.merge(id: ids[idx]))
         end
       end
     end
@@ -1114,13 +1114,14 @@ module Ohm
         "Index #{@att.inspect} not found."
       end
     end
-
     @@attributes  = Hash.new { |hash, key| hash[key] = [] }
+    @@references  = Hash.new { |hash, key| hash[key] = [] }
     @@collections = Hash.new { |hash, key| hash[key] = [] }
     @@counters    = Hash.new { |hash, key| hash[key] = [] }
     @@indices     = Hash.new { |hash, key| hash[key] = [] }
     @@types       = Hash.new { |hash, key| hash[key] = {} }
     @@serializers = Hash.new { |hash, key| hash[key] = {} }
+    @@attribs_with_id  = Hash.new
 
     def id
       @id or raise MissingID
@@ -1158,7 +1159,7 @@ module Ohm
         write_local(name, value)
       end
 
-      attributes(self) << name unless attributes.include?(name)
+      _define_attribute(self, name)
     end
 
     # Defines a counter attribute for the model. This attribute can't be
@@ -1168,7 +1169,7 @@ module Ohm
     def self.counter(name)
       define_method(name) do
         return 0 if new?
-        key.hget(name).to_i
+        key[:counters].hget(name).to_i
       end
 
       counters(self) << name unless counters.include?(name)
@@ -1277,10 +1278,10 @@ module Ohm
       
       reader = :"#{name}_id"
       writer = :"#{name}_id="
-      fkey = options.via || :id
+      fkey = options[:via] || :id
 
-      attributes(self) << reader unless attributes.include?(reader)
-
+      _define_attribute(self,reader)
+      references(self) << name unless references.include?(name)
       index reader
 
       define_memoized_method(name) do
@@ -1426,6 +1427,10 @@ module Ohm
       klass ? @@attributes[klass] : all_ancestors(@@attributes)
     end
 
+    def self.references(klass=nil)
+      klass ? @@references[klass] : all_ancestors(@@references)
+    end
+
     # Map of the types of defined attributes within a class.
     # @see Ohm::Model.attribute
     def self.types(klass=nil)
@@ -1560,6 +1565,8 @@ module Ohm
     #
     # @param [Hash] attrs Attribute value pairs.
     def initialize(attrs = {})
+      @id = nil
+      @loaded = false
       @_memo ||= {}
       @_attributes ||= Hash.new { |hash, key| hash[key] = lazy_fetch(key) }
       update_local(attrs)
@@ -1601,7 +1608,7 @@ module Ohm
 
         # return the object if we have it or a subclass already materialized and not coercing
         if  r.class == klass || !type && r.class < klass
-          return r.update_local( attrs.except(:id, :_type, '_type') )
+          return r.update_local( attrs.symbolize_slice( r.class._attribs_with_id ) )
 
         elsif type && ( r.class < klass || klass < r.class )
           # pull the attributes to coerce to new type
@@ -1619,12 +1626,12 @@ module Ohm
         attrs = _attrs.merge(attrs)
       end
 
-#      debug {"#{name}#new #{klass} attrs: #{attrs}"}
+#     debug {"#{name}#new #{klass} attrs slice #{attrs.symbolize_slice(klass._attribs_with_id)}"}
       instance = 
         if self < klass || klass < self
           klass.new( klass, attrs )
         elsif klass == self
-          super( attrs )
+          super( attrs.symbolize_slice( _attribs_with_id ) )
         else
           _type_mismatch(klass)
         end
@@ -1636,6 +1643,15 @@ module Ohm
       end
 
       instance
+    end
+
+    def self._define_attribute(klass,attr)
+      @@attribs_with_id = {}
+      attributes(self) << attr unless attributes.include?(attr)
+    end
+
+    def self._attribs_with_id
+      @@attribs_with_id[self] ||= ::Set.new( attributes + references + [:id] )
     end
 
     def self._type_mismatch(klass,cur=self)
@@ -2139,7 +2155,7 @@ module Ohm
     def self.db
       return Ohm.redis unless defined?(@options)
 
-      Redis.connect(@options)
+      Redis.connect({ symbolize_keys: true }.merge(@options))
     end
 
     def self.db=(connection)
@@ -2204,11 +2220,11 @@ module Ohm
         end
         
         def logger
-          @logger ||= nil || superclass.logger rescue nil
+          @logger ||= ( superclass.logger rescue nil ) || ( db.client.logger )
         end
 
         def log_level
-          @log_level ||= nil || superclass.log_level rescue nil
+          @log_level ||= superclass.log_level rescue nil
         end
       end
     end
@@ -2304,7 +2320,7 @@ module Ohm
     # @return [String] The value of att.
     def lazy_fetch(att)
       # if you done load one missing key, you done load 'em all
-      load && @_attributes.has_key?(att) && read_local(att) unless new?
+      load && @_attributes.has_key?(att) ? read_local(att) : nil unless new?
     end
     
     # Used internally to read a remote attribute and force the encoding

@@ -157,7 +157,8 @@ module Ohm
   #
   # @see Model.const_missing
   class Model
-
+    include Ohm::Screen
+    
     # Wraps a model name for lazy evaluation.
     class Wrapper < BasicObject
 
@@ -1382,12 +1383,6 @@ module Ohm
       new(:id => id).load if id 
       rescue MissingID
         nil
-    end
-
-    # The current Ohm::Screen in use by this thread
-    # This could also be specialized per class, e.g. Ohm::Screen.current[root]
-    def self.screen
-      Ohm::Screen.current
     end
 
     # @private Used for conveniently doing [1, 2].map(&Post) for example.

@@ -9,30 +9,46 @@ module Ohm
   # process affinity or sticky session type mechanisms may want to keep the warm
   # Screen across requests.
   #
-  class Screen < Hash
-    
-    def self.current
-      Ohm.threaded[:screen] ||= new
-    end
-    
-    def counts
-      @counts ||= {}
-    end
-    
-    def clear
-      @counts = nil
-      super
+  module Screen
+
+    class Screen < Hash
+      
+      def counts
+        @counts ||= {}
+      end
+      
+      def clear
+        @counts = nil
+        super
+      end
+  
+      def delete(mk)
+        mk.respond_to?(:key) ? super(mk.key) : super(mk.to_s)
+      end
+  
+      def [](k)
+        hit, miss = counts[k] || [0,0]
+        if ( r = super )
+          hit += 1
+        else
+          miss += 1
+        end
+       counts[k] = [hit, miss]
+       r
+      end
     end
 
-    def [](k)
-      hit, miss = counts[k] || [0,0]
-      if ( r = super )
-        hit += 1
-      else
-        miss += 1
+    def self.included(base)
+      base.extend ClassMethods
+    end
+
+    module ClassMethods
+
+      # The current Ohm::Screen in use by this thread
+      # This could also be specialized per class, e.g. Ohm::Screen.current[root]
+      def screen
+        Ohm.threaded[:screen] ||= Screen.new
       end
-     counts[k] = [hit, miss]
-     r
     end
 
   end

@@ -22,6 +22,8 @@ class User < ModelBase
   index :likes
   counter :visits
   
+  attr_accessor :location
+  
   def validate
     assert_present :name
   end
@@ -143,3 +145,7 @@ test "promote type of existing object with new/save" do
   assert !Hacker.exists?(@su.id)
 end
 
+test "slicing and assigning transient attributes via accessors" do
+  @u = User.create( name: 'lenny', location: 'ost' )
+  assert @u.location == 'ost'
+end

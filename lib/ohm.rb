@@ -1122,7 +1122,6 @@ module Ohm
     @@indices     = Hash.new { |hash, key| hash[key] = [] }
     @@types       = Hash.new { |hash, key| hash[key] = {} }
     @@serializers = Hash.new { |hash, key| hash[key] = {} }
-    @@attribs_with_id  = Hash.new
 
     def id
       @id or raise MissingID
@@ -1603,7 +1602,7 @@ module Ohm
 
         # return the object if we have it or a subclass already materialized and not coercing
         if  r.class == klass || !type && r.class < klass
-          return r.update_local( attrs.symbolize_slice( r.class._attribs_with_id ) )
+          return r.update_local( _slice_attributes( r.class, klass, attrs ) )
 
         elsif type && ( r.class < klass || klass < r.class )
           # pull the attributes to coerce to new type
@@ -1620,13 +1619,15 @@ module Ohm
         raise MissingID.new( "#{klass}[#{id}] not found" ) if _attrs.empty?
         attrs = _attrs.merge(attrs)
       end
+      
+      dklass = r && r.class || klass
+#      debug {"#{name}#new #{dklass} : #{klass} attrs slice #{_slice_attributes( dklass, klass, attrs )}"}
 
-#     debug {"#{name}#new #{klass} attrs slice #{attrs.symbolize_slice(klass._attribs_with_id)}"}
       instance = 
         if self < klass || klass < self
-          klass.new( klass, attrs )
+          klass.new( klass, _slice_attributes( dklass, klass, attrs ) )
         elsif klass == self
-          super( attrs.symbolize_slice( _attribs_with_id ) )
+          super( _slice_attributes( dklass, klass, attrs ) )
         else
           _type_mismatch(klass)
         end
@@ -1640,13 +1641,14 @@ module Ohm
       instance
     end
 
-    def self._define_attribute(klass,attr)
-      @@attribs_with_id = {}
-      attributes(self) << attr unless attributes.include?(attr)
+    def self._slice_attributes( dklass, klass, attrs )
+      # remove all the attributes in dklass that aren't in klass
+      dattrs = dklass.attributes - klass.attributes
+      attrs.symbolize_keys.delete_if{ |k,v| dattrs.include?(k) }
     end
 
-    def self._attribs_with_id
-      @@attribs_with_id[self] ||= ::Set.new( attributes + references + [:id] )
+    def self._define_attribute(klass,attr)
+      attributes(self) << attr unless attributes.include?(attr)
     end
 
     def self._type_mismatch(klass,cur=self)

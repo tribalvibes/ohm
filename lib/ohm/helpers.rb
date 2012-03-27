@@ -28,17 +28,14 @@ unless Array.new.respond_to?(:extract_options!)
   end
 end
 
-unless Hash.new.respond_to?(:symbolize_slice)
+unless Hash.new.respond_to?(:symbolize_keys)
   class Hash
-    # symbolize_keys.slice!(set)
-    def symbolize_slice(allowed)
-      hash = dup
-      hash.keys.each {|k|
-        sk = k.to_sym rescue k
-        v = hash.delete(k)
-        hash[sk] = v  if allowed.include?(sk)
-      }
-      hash
+    # File lib/active_support/core_ext/hash/keys.rb, line 22
+    def symbolize_keys
+      inject({}) do |options, (key, value)|
+        options[(key.to_sym rescue key) || key] = value
+        options
+      end
     end
   end
 end

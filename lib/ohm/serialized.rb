@@ -263,7 +263,6 @@ module Ohm
       end
   
     private
-      attr :_types
       def _types
         @_types ||= {}
       end

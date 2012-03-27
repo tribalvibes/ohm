@@ -15,7 +15,6 @@ module Ohm
       Ohm.threaded[:screen] ||= new
     end
     
-    attr :counts
     def counts
       @counts ||= {}
     end

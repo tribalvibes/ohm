@@ -99,6 +99,7 @@ test "delete the attribute if set to an empty string" do
   event = Meetup.create(:name => "Ruby Tuesday", :location => "Los Angeles")
   assert "Los Angeles" == Meetup[event.id].location
   assert event.update(:location => "")
+  Meetup.screen.clear
   assert nil == Meetup[event.id].location
 end
 
@@ -399,8 +400,9 @@ def monitor
 end
 
 test "load attributes lazily" do
-  event = Event[@id]
-
+  Event.screen.clear
+  event = Event.new(id:@id)
+  
   log = monitor { event.name }
 
   assert !log.empty?
@@ -412,7 +414,8 @@ end
 
 test "load attributes as a strings" do
   event = Event.create(:name => 1)
-
+  Event.screen.clear
+  
   assert "1" == Event[event.id].name
 end
 
@@ -917,7 +920,8 @@ test "save to the selected database" do
   assert make == Make[1]
 
   Make.db.flushdb
-
+  Make.screen.clear
+  
   assert car == Car[1]
   assert Make[1].nil?
 end
@@ -942,7 +946,7 @@ test "persist attributes to a hash" do
   assert "hash" == Ohm.redis.type("Event:1")
 
   assert [
-    "Event:1", "Event:all", "Event:id"
+    "Event:1", "Event:1:counters", "Event:all", "Event:id"
   ].sort == Ohm.redis.keys("Event:*").sort
 
   assert "Redis Meetup" == Event[1].name

@@ -28,24 +28,19 @@ unless Array.new.respond_to?(:extract_options!)
   end
 end
 
-unless Hash.new.respond_to?(:symbolize_keys)
+unless Hash.new.respond_to?(:symbolize_slice)
   class Hash
-    # File activesupport/lib/active_support/core_ext/hash/keys.rb, line 21
-    # Return a new hash with all keys converted to symbols, as long as
-    # they respond to +to_sym+.
-    def symbolize_keys
-      dup.symbolize_keys!
+    # symbolize_keys.slice!(set)
+    def symbolize_slice(allowed)
+      hash = dup
+      hash.keys.each {|k|
+        sk = k.to_sym rescue k
+        v = hash.delete(k)
+        hash[sk] = v  if allowed.include?(sk)
+      }
+      hash
     end
-  
-    # Destructively convert all keys to symbols, as long as they respond
-    # to +to_sym+.
-    def symbolize_keys!
-      keys.each do |key|
-        self[(key.to_sym rescue key) || key] = delete(key)
-      end
-      self
-    end
-  end  
+  end
 end
 
 unless defined?(silence_warnings)

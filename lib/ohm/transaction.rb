@@ -42,48 +42,43 @@ module Ohm
   #
   # @see http://redis.io/topic/transactions Transactions in Redis.
   class Transaction
-    class Store < BasicObject
-      class EntryAlreadyExistsError < ::RuntimeError
+    class Store < Hash
+      EntryAlreadyExistsError = Class.new(RuntimeError)
+      NoEntryError = Class.new(RuntimeError)
+
+      def [](key)
+        raise NoEntryError unless member?(key)
+        super
       end
 
-      def method_missing(writer, value)
-        super unless writer[-1] == "="
-
-        reader = writer[0..-2].to_sym
-
-        __metaclass__.send(:define_method, reader) do
-          value
-        end
-
-        __metaclass__.send(:define_method, writer) do |*_|
-          ::Kernel.raise EntryAlreadyExistsError
-        end
+      def []=(key, value)
+        raise EntryAlreadyExistsError if member?(key)
+        super
       end
-
-    private
-      def __metaclass__
-        class << self; self end
+      
+      def finish
+        each{|k,v| store(k, v.value) if Redis::Future === v }
       end
     end
 
     attr :phase
 
     def initialize
-      @phase = Hash.new { |h, k| h[k] = ::Set.new }
+      @phase = Hash.new { |h, k| h[k] = Array.new }
 
       yield self if block_given?
     end
 
     def append(t)
       t.phase.each do |key, values|
-        phase[key].merge(values)
+        phase[key].concat(values - phase[key])
       end
 
       self
     end
 
     def watch(*keys)
-      phase[:watch] += keys
+      phase[:watch].concat(keys - phase[:watch])
     end
 
     def read(&block)
@@ -103,10 +98,10 @@ module Ohm
     end
 
     def commit(db)
-      phase[:before].each(&:call)
+      store = istore = run(phase[:before], Store.new)
 
       loop do
-        store = Store.new
+        store = istore.clone
 
         if phase[:watch].any?
           db.watch(*phase[:watch])
@@ -117,13 +112,16 @@ module Ohm
         break if db.multi do
           run(phase[:write], store)
         end
+
       end
 
-      phase[:after].map(&:call).last
+      store.finish
+      run(phase[:after], store)
     end
 
     def run(procs, store)
       procs.each { |p| p.call(store) }
+      store
     end
   end
 end

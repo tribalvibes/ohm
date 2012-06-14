@@ -1,5 +1,5 @@
 # encoding: UTF-8
 
 module Ohm
-  VERSION = "0.2.0rc1"
+  VERSION = "0.3.0a1"
 end

@@ -15,6 +15,20 @@ require "ohm/transaction"
 
 module Ohm
 
+  class Redis < ::Redis
+   private
+    # directly symbolize keys when hashifying result of hgetall
+    def _hashify
+      lambda { |array|
+        hash = Hash.new
+        array.each_slice(2) do |field, value|
+          hash[field.intern] = value
+        end
+        hash
+      }
+    end
+  end
+
   # Provides access to the _Redis_ database. It is highly recommended that you
   # use this sparingly, and only if you really know what you're doing.
   #
@@ -117,7 +131,7 @@ module Ohm
   #
   # This is a wrapper around Redis.connect(options)
   def self.connection(options={})
-    Redis.connect({ symbolize_keys: true }.merge(options))
+    Redis.connect(options)
   end
 
   # @private Stores the connection options for Ohm.redis.
@@ -1593,7 +1607,7 @@ module Ohm
       ( id = attrs[:id] ) && ( k = root.key[id] ) && ( r = root.screen[k] )
 
       # if we have to fetch the _type attribute, might as well load them all in one shot
-      type ||= !r && id && polymorphic && ( _attrs = k.hgetall ) && _attrs.delete('_type')
+      type ||= !r && id && polymorphic && ( _attrs = k.hgetall ) && ( _attrs.delete(:_type) || _attrs.delete('_type') )
       type = type && constantize( type.to_s )
       klass = type || self
 
@@ -2015,8 +2029,11 @@ module Ohm
     end
     
     attr :_type
-    attr_writer :id
-
+    
+    def id=(_id)
+      @id = _id.to_s
+    end
+    
     def changed!
       @changed = true
     end
@@ -2152,7 +2169,7 @@ module Ohm
     def self.db
       return Ohm.redis unless defined?(@options)
 
-      Redis.connect({ symbolize_keys: true }.merge(@options))
+      Redis.connect(@options)
     end
 
     def self.db=(connection)

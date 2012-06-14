@@ -21,8 +21,7 @@ $VERBOSE = true
 require "ohm"
 require "logger"
 
-Ohm.connect(port: 6666)
-Ohm.redis.client.logger = Logger.new(STDOUT)
+Ohm.connect(port: 6666, logger: Logger.new(STDOUT))
 Ohm.redis.client.logger.level = Logger::INFO
 
 class Ohm::Model

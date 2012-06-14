@@ -68,6 +68,20 @@ test "assign an ID and save the object" do
   assert "2" == event2.id
 end
 
+test "object identity is by key" do
+  e1 = Event.create(:name => "Ruby Tuesday")
+  Event.screen.clear
+  e2 = Event.all.first
+  assert e1 == e2
+end
+
+test "object id is a string" do
+  e1 = Event.create(:name => "Ruby Tuesday")
+  Event.screen.clear
+
+  assert e1.id == Event[1].id
+end
+
 test "return the unsaved object if validation fails" do
   assert Person.create(:name => nil).kind_of?(Person)
 end
@@ -183,7 +197,7 @@ end
 
 test "return an instance of Event" do
   assert Event[1].kind_of?(Event)
-  assert 1 == Event[1].id
+  assert "1" == Event[1].id
   assert "Concert" == Event[1].name
 end
 
@@ -194,7 +208,7 @@ end
 
 test "return an instance of User" do
   assert User[1].kind_of?(User)
-  assert 1 == User[1].id
+  assert "1" == User[1].id
   assert "albert@example.com" == User[1].email
 end
 

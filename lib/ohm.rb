@@ -1887,6 +1887,7 @@ module Ohm
       raise MissingID.new( "#{self.class}[#{id}] not found" ) if attrs.empty?
       @loaded = true
       attrs.delete('_type')
+      attrs.delete(:_type)
       attrs      
     end
         

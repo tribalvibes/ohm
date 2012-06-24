@@ -466,8 +466,9 @@ module Ohm
       
      private
       def fetch(ids=ids)
+        idu = ids.uniq
         arr = model.db.pipelined do
-          ids.each do |id| 
+          idu.each do |id| 
             k = model.root.key[id]
             model.root.screen.delete(k)
             k.hgetall
@@ -475,11 +476,14 @@ module Ohm
         end
   
         return [] if arr.nil?
-  
-        arr.map.with_index do |atts, idx|
+        
+        # materialize each unique object on screen
+        arr.each_with_index do |atts, idx|
           # model.counters.each{|k| atts.delete(k.to_s) }
-          model.new(atts.delete(:_type) || atts.delete('_type') || model, true, atts.merge(id: ids[idx]))
+          model.new(atts.delete(:_type) || atts.delete('_type') || model, true, atts.merge(id: idu[idx]))
         end
+        
+        ids.map{|id| model[id] }
       end
     end
 

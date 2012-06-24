@@ -6,6 +6,7 @@ Polymorphism allows Ohm models to be derived from, subclassed and specialized. S
 ### Example
 
     class User < Ohm::Model
+      polymorphic(true)
       attribute :name
       index :name
     end
@@ -15,7 +16,7 @@ Polymorphism allows Ohm models to be derived from, subclassed and specialized. S
       index :kernel
     end
 
-Here `SuperUser` derives from `User` and adds the indexed attribute `kernel`.
+Here `SuperUser` derives from `User` and adds the indexed attribute `kernel`. The line `polymorphic(true)` flags the model `User` as the root of a polymorphic tree of model classes.
 
 ## Model Root 
 

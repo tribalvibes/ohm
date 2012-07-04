@@ -1293,7 +1293,7 @@ module Ohm
     # @see Ohm::Model.collection
     def self.reference(name, model, options={})
       model = Wrapper.wrap(model)
-      
+
       reader = :"#{name}_id"
       writer = :"#{name}_id="
       fkey = options[:via] || :id
@@ -1365,10 +1365,12 @@ module Ohm
     #                             model.
     #
     # @see file:README.html#collections Collections Explained.
-    def self.collection(name, model, reference = to_reference)
+    def self.collection(name, model, *args)
+      options = ( args.pop if Hash === args.last ) || {}
+      reference = args.first || to_reference
       model = Wrapper.wrap(model)
       define_method(name) {
-        model.unwrap.find(:"#{reference}_id" => send(:id))
+        model.unwrap.find(:"#{reference}_id" => send( options.via || :id))
       }
       collections(self) << name unless collections.include?(name)
     end

@@ -1691,12 +1691,20 @@ module Ohm
     
     # Create or update this object based on the state of #new?.
     #
-    # @return [Ohm::Model, nil] The saved object or nil if it fails
+    # @return [Ohm::Model, false] The saved object or false if it fails
     #                           validation.
     def save
       return create if new?
       return false unless valid?
+      _save if changed?
+      self
+    end
+    
+    # Always create or save object whether or not valid? or changed?
+    def save!
+      return create if new?
       _save
+      self
     end
     
     # Update this object, optionally accepting new attributes.
@@ -2038,7 +2046,7 @@ module Ohm
     attr :_type
     
     def id=(_id)
-      @id = _id.to_s
+      @id = _id && _id.to_s
     end
     
     def changed!

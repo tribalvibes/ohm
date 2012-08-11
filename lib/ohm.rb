@@ -1953,7 +1953,7 @@ module Ohm
     def inspect
       everything = attributes_for_inspect.map do |att|
         value = begin
-                  send(att)
+                  value_for_inspect(att)
                 rescue MissingID
                   nil
                 end
@@ -2041,6 +2041,10 @@ module Ohm
     # Return the list of attributes, collections, counters etc. for inspect
     def attributes_for_inspect
       (attribute_names + collections + counters)
+    end
+    
+    def value_for_inspect(att)
+      send(att)
     end
     
     attr :_type

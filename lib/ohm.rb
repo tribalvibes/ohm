@@ -450,7 +450,7 @@ module Ohm
       def replace(models)
         model.db.multi do
           clear
-          models.each { |model| add(model) }
+          self << models
         end
       end
 
@@ -556,13 +556,15 @@ module Ohm
       # Adds a model or a set of models to this set.
       #
       # @param [#id] model Typically an instance of an {Ohm::Model} subclass of this set,
-      #        or a set of models
+      #        or a Set or Enumerable of models
       #
       # @see http://code.google.com/p/redis/wiki/SaddCommand SADD in Redis
       #      Command Reference.
       def <<(model)
         if model.class <= self.class
           key.sunionstore(key, model.key)
+        elsif model.class <= Enumerable
+          key.sadd( model.map(&:id) )
         else
           key.sadd(model.id)
         end
@@ -588,6 +590,8 @@ module Ohm
       def delete(member)
         if member.class <= self.class
           key.sdiffstore(key, member.key)
+        elsif member.class <= Enumerable
+          key.srem( model.map(&:id) )
         else
           key.srem(member.id)
         end

@@ -15,6 +15,8 @@ module Ohm
   #
   # @see http://github.com/soveran/nest
   class Key < Nest
+    require 'securerandom'
+
     def volatile
       self.index("~") == 0 ? self : self.class.new("~", redis)[self]
     end
@@ -46,7 +48,6 @@ module Ohm
     # used for storing transient and intermediate results on sets.
     # NB the key name is not guaranteed to be unique, but almost surely so as 1/64**len
     def unique(len=16)
-      require 'securerandom'
       self[SecureRandom.urlsafe_base64(len)]
     end
   end

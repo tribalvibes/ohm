@@ -564,7 +564,7 @@ module Ohm
         if model.class <= self.class
           key.sunionstore(key, model.key)
         elsif model.class <= Enumerable
-          key.sadd( model.map(&:id) )
+          key.sadd( model.map(&:id) ) unless model.empty?
         else
           key.sadd(model.id)
         end
@@ -1103,6 +1103,8 @@ module Ohm
       end
     end
 
+    TypeMismatch = Class.new(Error)
+    
     # Raised when you try and do an {Ohm::Model::Set#find} operation and use
     # a key which you did not define as an index.
     #
@@ -1676,7 +1678,7 @@ module Ohm
     end
 
     def self._type_mismatch(klass,cur=self)
-      raise MissingID.new("#{klass} is not a #{cur}")    
+      raise TypeMismatch.new("#{klass} is not a #{cur}")    
     end
 
     # @return [true, false] Whether or not this object has an id.

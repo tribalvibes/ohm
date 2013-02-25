@@ -583,6 +583,7 @@ module Ohm
       
       def add_ids(ids)
         key.sadd(ids)
+        self
       end
       
       # Thin Ruby interface wrapper for *SREM*.
@@ -1301,7 +1302,7 @@ module Ohm
     # @see file:README.html#references References Explained.
     # @see Ohm::Model.collection
     def self.reference(name, model, options={})
-      model = Wrapper.wrap(model)
+      model_ = Wrapper.wrap(model)
 
       reader = :"#{name}_id"
       writer = :"#{name}_id="
@@ -1309,10 +1310,11 @@ module Ohm
 
       _define_attribute(self,reader)
       references(self) << name unless references.include?(name)
+      types(root)[name] = model
       index reader
 
       define_memoized_method(name) do
-        model.unwrap[send(reader)]
+        model_.unwrap[send(reader)]
       end
 
       define_method(:"#{name}=") do |value|

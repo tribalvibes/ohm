@@ -582,7 +582,7 @@ module Ohm
       end
       
       def add_ids(ids)
-        key.sadd(ids)
+        key.sadd(ids) unless ids.empty?
         self
       end
       

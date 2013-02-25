@@ -417,10 +417,6 @@ module Ohm
         key.del
       end
 
-      def ids
-        key.smembers
-      end
-      
       # Simultaneously clear and add all models. This wraps all operations
       # in a MULTI EXEC block to make the whole operation atomic.
       #
@@ -581,7 +577,14 @@ module Ohm
         key.scard
       end
 
-
+      def ids
+        key.smembers
+      end
+      
+      def add_ids(ids)
+        key.sadd(ids)
+      end
+      
       # Thin Ruby interface wrapper for *SREM*.
       #
       # @param [#id] member a member of this set, or a set of members to be deleted from this set.
@@ -773,7 +776,7 @@ module Ohm
         source = keys(options)
         target = source.inject(key.volatile) { |chain, other| chain.send(op, other) }
         model.debug { "find: #{model} #{options}: #{key} #{op} #{source} => #{target}" }
-        [source, target]
+        [source, target.unique]
       end
 
       # @private
@@ -801,7 +804,7 @@ module Ohm
       
       def union_key_for(attr, values)
         source = values.map {|v| model.index_key_for(attr, v) }
-        target = model.key_for( attr, source.reduce(&:*), :union ).volatile
+        target = model.key_for( attr, source.reduce(&:*), :union ).volatile.unique
         model.debug { "union_key_for: #{attr}: #{target} <= #{values}" }
         apply(:sunionstore, source.shift, source, target)
         target
